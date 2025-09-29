@@ -1,0 +1,127 @@
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: nextjs-app
+  - name: DOCKER_BUILDKIT
+    value: 1  
+
+stages:
+- stage: SonarQubeAnalysis
+  jobs:
+  - job: SonarQube
+    steps:
+    - task: JavaToolInstaller@1
+      inputs:
+        versionSpec: '17'
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+
+    - checkout: self
+
+    - script: |
+        echo "📦 Téléchargement de SonarScanner CLI..."
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+        unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+        mv sonar-scanner-5.0.1.3006-linux sonar-scanner
+        export PATH=$(pwd)/sonar-scanner/bin:$PATH
+
+        echo "🔍 Lancement de l'analyse SonarQube..."
+        sonar-scanner \
+          -Dsonar.projectKey=nextjs-app \
+          -Dsonar.projectName=nextjs-app \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=$(SONARQUBE_ENDPOINT_URL) \
+          -Dsonar.token=$(SONARQUBE_AUTH_TOKEN) \
+          -Dsonar.projectVersion=1.0
+      displayName: 'Run SonarScanner'
+
+- stage: BuildAndPush
+  dependsOn: SonarQubeAnalysis
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
+
+    - task: DownloadSecureFile@1
+      name: DownloadEnv
+      inputs:
+        secureFile: '.env'
+
+    - script: |
+        cp "$(DownloadEnv.secureFilePath)" .env
+        ls -la .env
+      displayName: 'Copier .env à la racine'
+
+    - script: |
+        # Configuration simplifiée de .npmrc
+        echo "registry=$(NEXUS_URL)" > .npmrc
+        echo "//next_url/repository/npm-proxy/:_auth=$(NEXUS_AUTH_TOKEN)" >> .npmrc
+        echo "always-auth=true" >> .npmrc
+        echo "strict-ssl=false" >> .npmrc
+        
+        # Afficher le .npmrc pour vérification (debug)
+        echo "Contenu du .npmrc :"
+        cat .npmrc
+        
+        # Installation
+        npm install -g pnpm
+        pnpm install --loglevel verbose --fetch-retries 3
+      displayName: 'Install dependencies with Nexus cache'
+      env:
+        NEXUS_URL: $(NEXUS_URL)
+        NEXUS_AUTH_TOKEN: $(NEXUS_AUTH_TOKEN)
+
+    - script: |
+        export VERSION=$(cat version.txt)
+        echo "##vso[task.setvariable variable=IMAGE_TAG]sandbox-${VERSION}"
+      displayName: 'Lire version depuis version.txt'
+
+    - script: |
+        # Build avec Docker BuildKit pour utiliser le cache
+        docker build \
+          --build-arg NEXUS_URL=$(NEXUS_URL) \
+          --build-arg NEXUS_AUTH_TOKEN=$(NEXUS_AUTH_TOKEN) \
+          -t $(ACR_NAME)/$(IMAGE_NAME):$(IMAGE_TAG) .
+        echo "Image built"
+        docker images
+      displayName: 'Build Docker image with cache'
+
+    - task: trivy@2
+      displayName: 'Trivy Scan'
+      inputs:
+        method: 'docker'
+        version: 'latest'
+        type: 'image'
+        target: '$(ACR_NAME)/$(IMAGE_NAME):$(IMAGE_TAG)'
+        scanners: 'license,misconfig,secret,vuln'
+        severities: 'MEDIUM,HIGH,CRITICAL'
+        ignoreScanErrors: true
+
+        reports: 'github,html,table'
+        publish: true
+
+    - script: |
+        echo "$(ACR_PASSWORD)" | docker login $(ACR_NAME) -u $(ACR_USER) --password-stdin
+        docker push $(ACR_NAME)/$(IMAGE_NAME):$(IMAGE_TAG)
+      displayName: 'Push image to ACR'
+
+    - script: |
+        echo "🧬 Clonage du repo GitOps..."
+        git config --global user.email "devops@email.com"
+        git config --global user.name "Azure DevOps Pipeline"
+
+        git clone --branch sandbox https://gitlab-ci-token:$(GITOPS_TOKEN)@gitlab.com/MyOrganization/internal/k8s-gitops.git
+        cd k8s-gitops/overlays/sandbox/nextjs-app
+
+        echo "✏️ Mise à jour de l'image dans patch-deployment.yaml..."
+        sed -i "s|image: .*|image: $(ACR_NAME)/$(IMAGE_NAME):$(IMAGE_TAG)|g" patch-deployment.yaml
+
+        git add patch-deployment.yaml
+        git commit -m "🤖 MAJ image sandbox: $(IMAGE_TAG)"
+        git push origin sandbox
+      displayName: 'Update image tag in GitOps'
