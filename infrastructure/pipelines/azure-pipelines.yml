@@ -1,0 +1,46 @@
+trigger:
+  branches:
+    include:
+      - validation
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  terraformVersion: '1.5.7'
+  azureServiceConnection: 'AzureRM-nextjs-app-SP'  
+
+steps:
+- task: TerraformInstaller@1
+  inputs:
+    terraformVersion: '$(terraformVersion)'
+
+- task: TerraformTaskV4@4
+  displayName: 'Terraform Init'
+  inputs:
+    provider: 'azurerm'
+    command: 'init'
+    backendServiceArm: '$(azureServiceConnection)'
+    backendAzureRmResourceGroupName: 'nextjs-app-infra'
+    backendAzureRmStorageAccountName: 'tfstatenextjsapp'
+    backendAzureRmContainerName: 'tfstate'
+    backendAzureRmKey: 'validation.terraform.tfstate'
+    workingDirectory: 'envs/validation'
+
+- task: TerraformTaskV4@4
+  displayName: 'Terraform Plan'
+  inputs:
+    provider: 'azurerm'
+    command: 'plan'
+    environmentServiceNameAzureRM: '$(azureServiceConnection)'
+    workingDirectory: 'envs/validation'
+
+- task: TerraformTaskV4@4
+  displayName: 'Terraform Apply'
+  inputs:
+    provider: 'azurerm'
+    command: 'apply'
+    environmentServiceNameAzureRM: '$(azureServiceConnection)'
+    args: '-auto-approve'
+    workingDirectory: 'envs/validation'
+
