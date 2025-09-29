@@ -1,0 +1,27 @@
+stages:
+  - trigger
+
+trigger_azure_pipeline:
+  stage: trigger
+  only:
+    refs:
+      - devops
+  tags:
+    - azure-runner
+  script:
+    - echo "Triggering Azure DevOps pipeline for branch $CI_COMMIT_REF_NAME"
+    - |
+      curl -X POST \
+        -u ":$AZURE_PAT" \
+        -H "Content-Type: application/json" \
+        -d '{"resources": {"repositories": {"self": {"refName": "refs/heads/main"}}}}' \
+        "https://dev.azure.com/MyOrganization/nextjs-app/_apis/pipelines/4/runs?api-version=7.1-preview.1"
+
+
+
+
+
+
+
+
+        
