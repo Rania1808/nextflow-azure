@@ -1,0 +1,7 @@
+namespace: sandbox
+
+resources:
+  - ../../../apps/nextjs/base
+
+patchesStrategicMerge:
+  - patch-deployment.yaml

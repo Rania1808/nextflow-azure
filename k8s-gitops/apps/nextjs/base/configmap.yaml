@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextjs-app-config
+data:
+  NODE_ENV: sandbox
+  PORT: "3001"
