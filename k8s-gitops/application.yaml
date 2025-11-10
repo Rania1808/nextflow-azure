@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nextflow-sandbox
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: "#nextflow-deploys"
+spec:
+  project: default
+  source:
+    repoURL: 'https://gitlab.com/k8s-gitops.git'
+    targetRevision: sandbox
+    path: overlays/sandbox
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sandbox
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
