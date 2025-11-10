@@ -1,5 +1,7 @@
 # nextflow-azure
 
+![oms](https://github.com/user-attachments/assets/0842235f-5d9c-4832-8268-822b4c6c3028)
+
 # 🚀 NextJS Production-Ready CI/CD Pipeline
 
 [![Pipeline Status](https://img.shields.io/badge/status-production-success)](https://gitlab.com/your-org/nextjs-app)
